@@ -7,7 +7,6 @@ timeout = 120
 loglevel = "info"
 accesslog = "-"
 errorlog = "-"
-worker_class = "gthread"  # Use WSGI-compatible worker
-max_requests = 1000
+worker_class = "uvicorn.workers.UvicornWorker"max_requests = 1000
 max_requests_jitter = 50
 keepalive = 5
