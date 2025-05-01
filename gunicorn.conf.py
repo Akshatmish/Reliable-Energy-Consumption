@@ -1,9 +1,9 @@
 import os
 
 bind = f"0.0.0.0:{os.getenv('PORT', '5000')}"
-workers = 4
+workers = 2  
 threads = 2
-timeout = 120
+timeout = 300  
 loglevel = "info"
 accesslog = "-"
 errorlog = "-"
