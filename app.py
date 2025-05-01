@@ -8,6 +8,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
 import sqlite3
 from datetime import datetime
+import pickle
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -29,7 +30,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Modify load_data to handle timestamp better
+# Load data (only needed for routes that display data, not for model loading)
 def load_data():
     try:
         data = pd.read_csv('household_power_consumption.txt', sep=';',
@@ -43,26 +44,18 @@ def load_data():
         print(f"Error loading data: {e}")
         return None
 
-# Load models
+# Load pre-trained models
 def load_models():
     global models
-    data = load_data()
-    if data is None:
+    try:
+        for target in models.keys():
+            models[target]['lin'] = pickle.load(open(f'{target}_lin.pkl', 'rb'))
+            models[target]['ridge'] = pickle.load(open(f'{target}_ridge.pkl', 'rb'))
+            models[target]['xgb'] = pickle.load(open(f'{target}_xgb.pkl', 'rb'))
+        return True
+    except Exception as e:
+        print(f"Error loading models: {e}")
         return False
-    
-    features = ['datetime', 'Global_reactive_power', 'Voltage', 'Global_intensity']
-    targets = ['Global_active_power', 'Sub_metering_1', 'Sub_metering_2', 'Sub_metering_3']
-    
-    X = data[features]
-    for target in targets:
-        y = data[target]
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
-        
-        models[target]['lin'] = LinearRegression().fit(X_train, y_train)
-        models[target]['ridge'] = Ridge().fit(X_train, y_train)
-        models[target]['xgb'] = XGBRegressor().fit(X_train, y_train)
-    
-    return True
 
 # Home page
 @app.route('/')
