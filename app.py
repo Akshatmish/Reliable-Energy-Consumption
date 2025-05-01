@@ -182,6 +182,10 @@ def error():
     message = request.args.get('message', 'An error occurred')
     return render_template('error.html', message=message)
 
+# Wrap Flask app for ASGI compatibility
+from asgiref.wsgi import WsgiToAsgi
+asgi_app = WsgiToAsgi(app)
+
 if __name__ == '__main__':
     init_db()
     if load_models():
