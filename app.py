@@ -30,13 +30,15 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Load data (only needed for routes that display data, not for model loading)
+# Load data (optimized to load a smaller subset for display purposes)
 def load_data():
     try:
+        # Load only 1000 rows to reduce memory usage on Render
         data = pd.read_csv('household_power_consumption.txt', sep=';',
                          parse_dates={'datetime': ['Date', 'Time']},
                          infer_datetime_format=True,
-                         low_memory=False)
+                         low_memory=False,
+                         nrows=1000)
         data = data.apply(pd.to_numeric, errors='coerce')
         data['datetime'] = data['datetime'].astype('int64') // 10**9
         return data.dropna()
@@ -57,7 +59,7 @@ def load_models():
         print(f"Error loading models: {e}")
         return False
 
-# Home page
+# Home page (optimized for Render)
 @app.route('/')
 def index():
     data = load_data()
@@ -107,7 +109,7 @@ def predict():
             return render_template('error.html', message=f"Prediction error: {str(e)}")
     return render_template('predict.html')
 
-# Updated compare route
+# Compare route (optimized for Render)
 @app.route('/compare')
 def compare():
     data = load_data()
