@@ -4,7 +4,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression, Ridge
 from xgboost import XGBRegressor
 
-# Same load_data function as in app.py
 def load_data():
     try:
         data = pd.read_csv('household_power_consumption.txt', sep=';',
@@ -18,7 +17,6 @@ def load_data():
         print(f"Error loading data: {e}")
         return None
 
-# Initialize models dictionary
 models = {
     'Global_active_power': {'lin': None, 'ridge': None, 'xgb': None},
     'Sub_metering_1': {'lin': None, 'ridge': None, 'xgb': None},
@@ -26,7 +24,6 @@ models = {
     'Sub_metering_3': {'lin': None, 'ridge': None, 'xgb': None}
 }
 
-# Train models
 data = load_data()
 if data is not None:
     features = ['datetime', 'Global_reactive_power', 'Voltage', 'Global_intensity']
@@ -41,11 +38,8 @@ if data is not None:
         models[target]['ridge'] = Ridge().fit(X_train, y_train)
         models[target]['xgb'] = XGBRegressor().fit(X_train, y_train)
 
-    # Save models to pickle files
     for target in models.keys():
         for model_type in ['lin', 'ridge', 'xgb']:
             with open(f'{target}_{model_type}.pkl', 'wb') as f:
                 pickle.dump(models[target][model_type], f)
     print("Models saved successfully.")
-else:
-    print("Failed to load data for pre-training.")
