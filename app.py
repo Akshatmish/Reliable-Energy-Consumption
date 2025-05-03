@@ -36,7 +36,8 @@ def load_data():
         # Load only 1000 rows to reduce memory usage on Render
         data = pd.read_csv('household_power_consumption.txt', sep=';',
                          parse_dates={'datetime': ['Date', 'Time']},
-                         infer_datetime_format=True,
+                         date_format='%d/%m/%Y %H:%M:%S',  # Specify the exact format
+                         dayfirst=True,  # Ensure day-first parsing for DD/MM/YYYY
                          low_memory=False,
                          nrows=1000)
         data = data.apply(pd.to_numeric, errors='coerce')
