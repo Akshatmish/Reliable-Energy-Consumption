@@ -21,7 +21,7 @@ models = {
     'Sub_metering_3': {'lin': None, 'ridge': None, 'xgb': None}
 }
 
-# Cache for the dataset to avoid reloading
+# Cache for the sampled dataset
 cached_data = None
 
 # Database setup for reviews
@@ -33,26 +33,43 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Load and cache data (optimized with sampling)
-def load_data(sample_size=10000):
+# Load and cache data using chunks to reduce memory usage
+def load_data(sample_size=10000, chunksize=100000):
     global cached_data
     if cached_data is not None:
         return cached_data
 
     try:
-        # Load only a subset of the data to reduce memory usage
-        data = pd.read_csv('household_power_consumption.txt', sep=';',
-                           parse_dates={'datetime': ['Date', 'Time']},
-                           infer_datetime_format=True,
-                           low_memory=False)
-        data = data.apply(pd.to_numeric, errors='coerce')
-        data['datetime'] = data['datetime'].astype('int64') // 10**9
-        data = data.dropna()
-        
-        # Sample the data to reduce memory footprint
+        # Read the dataset in chunks to avoid loading the entire file into memory
+        chunks = pd.read_csv('household_power_consumption.txt', sep=';',
+                             parse_dates={'datetime': ['Date', 'Time']},
+                             infer_datetime_format=True,
+                             low_memory=False,
+                             chunksize=chunksize)
+
+        # Process chunks and sample
+        sampled_data = []
+        total_rows = 0
+        for chunk in chunks:
+            chunk = chunk.apply(pd.to_numeric, errors='coerce')
+            chunk['datetime'] = chunk['datetime'].astype('int64') // 10**9
+            chunk = chunk.dropna()
+            total_rows += len(chunk)
+            
+            # Sample proportionally from each chunk
+            sample_fraction = min(sample_size / total_rows, 1.0) if total_rows > 0 else 1.0
+            sampled_chunk = chunk.sample(frac=sample_fraction, random_state=42) if sample_fraction < 1 else chunk
+            sampled_data.append(sampled_chunk)
+            
+            # Stop if we have enough samples
+            if sum(len(df) for df in sampled_data) >= sample_size:
+                break
+
+        # Concatenate sampled chunks
+        data = pd.concat(sampled_data, axis=0)
         if len(data) > sample_size:
             data = data.sample(n=sample_size, random_state=42)
-        
+
         cached_data = data
         return data
     except Exception as e:
@@ -85,8 +102,8 @@ def train_and_save_models():
         with open(f'{target}_ridge.pkl', 'wb') as f:
             pickle.dump(ridge_model, f)
 
-        # Train XGBoost with reduced complexity
-        xgb_model = XGBRegressor(n_estimators=50, max_depth=3, random_state=42)  # Reduced n_estimators and max_depth
+        # Train XGBoost with further reduced complexity
+        xgb_model = XGBRegressor(n_estimators=30, max_depth=2, random_state=42)  # Further reduced complexity
         xgb_model.fit(X_train, y_train)
         with open(f'{target}_xgb.pkl', 'wb') as f:
             pickle.dump(xgb_model, f)
