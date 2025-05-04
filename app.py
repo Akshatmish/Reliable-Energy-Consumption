@@ -1,14 +1,16 @@
 from flask import Flask, render_template, request, jsonify
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression, Ridge
-from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
 import sqlite3
 from datetime import datetime
 import pickle
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -21,104 +23,27 @@ models = {
     'Sub_metering_3': {'lin': None, 'ridge': None, 'xgb': None}
 }
 
-# Cache for the sampled dataset
-cached_data = None
-
-# Database setup for reviews
+# Database setup for reviews (use /tmp for Render's ephemeral filesystem)
 def init_db():
-    conn = sqlite3.connect('reviews.db')
+    db_path = '/tmp/reviews.db' if os.getenv('RENDER') else 'reviews.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS reviews
                  (id INTEGER PRIMARY KEY, username TEXT, review TEXT, rating INTEGER, timestamp TEXT)''')
     conn.commit()
     conn.close()
-
-# Load and cache data using chunks to reduce memory usage
-def load_data(sample_size=10000, chunksize=100000):
-    global cached_data
-    if cached_data is not None:
-        return cached_data
-
-    try:
-        # Read the dataset in chunks with explicit date format to suppress warning
-        chunks = pd.read_csv('household_power_consumption.txt', sep=';',
-                             parse_dates={'datetime': ['Date', 'Time']},
-                             date_format='%d/%m/%Y %H:%M:%S',  # Specify the exact format
-                             low_memory=False,
-                             chunksize=chunksize)
-
-        # Process chunks and sample
-        sampled_data = []
-        total_rows = 0
-        for chunk in chunks:
-            chunk = chunk.apply(pd.to_numeric, errors='coerce')
-            chunk['datetime'] = chunk['datetime'].astype('int64') // 10**9
-            chunk = chunk.dropna()
-            total_rows += len(chunk)
-            
-            # Sample proportionally from each chunk
-            sample_fraction = min(sample_size / total_rows, 1.0) if total_rows > 0 else 1.0
-            sampled_chunk = chunk.sample(frac=sample_fraction, random_state=42) if sample_fraction < 1 else chunk
-            sampled_data.append(sampled_chunk)
-            
-            # Stop if we have enough samples
-            if sum(len(df) for df in sampled_data) >= sample_size:
-                break
-
-        # Concatenate sampled chunks
-        data = pd.concat(sampled_data, axis=0)
-        if len(data) > sample_size:
-            data = data.sample(n=sample_size, random_state=42)
-
-        cached_data = data
-        return data
-    except Exception as e:
-        print(f"Error loading data: {e}")
-        return None
-
-# Train and save models if they don't exist (optimized for memory)
-def train_and_save_models():
-    data = load_data(sample_size=5000)
-    if data is None:
-        print("Cannot train models: Data loading failed.")
-        return False
-
-    features = ['datetime', 'Global_reactive_power', 'Voltage', 'Global_intensity']
-    X = data[features]
-    
-    for target in models.keys():
-        y = data[target]
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
-
-        # Train Linear Regression
-        lin_model = LinearRegression()
-        lin_model.fit(X_train, y_train)
-        with open(f'{target}_lin.pkl', 'wb') as f:
-            pickle.dump(lin_model, f)
-
-        # Train Ridge Regression
-        ridge_model = Ridge()
-        ridge_model.fit(X_train, y_train)
-        with open(f'{target}_ridge.pkl', 'wb') as f:
-            pickle.dump(ridge_model, f)
-
-        # Train XGBoost with reduced complexity
-        xgb_model = XGBRegressor(n_estimators=30, max_depth=2, random_state=42)
-        xgb_model.fit(X_train, y_train)
-        with open(f'{target}_xgb.pkl', 'wb') as f:
-            pickle.dump(xgb_model, f)
-
-    return True
+    return db_path
 
 # Load pre-trained models
 def load_models():
     global models
     try:
-        # Check if model files exist, if not, train and save them
+        # Check if model files exist
         for target in models.keys():
-            if not all(os.path.exists(f'{target}_{model}.pkl') for model in ['lin', 'ridge', 'xgb']):
-                print(f"Model files for {target} not found. Training new models...")
-                if not train_and_save_models():
+            for model_type in ['lin', 'ridge', 'xgb']:
+                model_path = f'{target}_{model_type}.pkl'
+                if not os.path.exists(model_path):
+                    logger.error(f"Model file {model_path} not found.")
                     return False
 
         # Load the models
@@ -126,26 +51,22 @@ def load_models():
             models[target]['lin'] = pickle.load(open(f'{target}_lin.pkl', 'rb'))
             models[target]['ridge'] = pickle.load(open(f'{target}_ridge.pkl', 'rb'))
             models[target]['xgb'] = pickle.load(open(f'{target}_xgb.pkl', 'rb'))
+        logger.info("Models loaded successfully.")
         return True
     except Exception as e:
-        print(f"Error loading models: {e}")
+        logger.error(f"Error loading models: {e}")
         return False
 
-# Home page
+# Home page (simplified without data loading)
 @app.route('/')
 def index():
-    data = load_data()
-    if data is None:
-        return render_template('error.html', message="Failed to load data")
-    
-    sample_data = data.head().to_dict(orient='records')
     stats = {
-        'total_records': len(data),
-        'columns': list(data.columns),
-        'mean_power': float(data['Global_active_power'].mean()),
-        'max_power': float(data['Global_active_power'].max())
+        'total_records': 'N/A (Pre-trained models used)',
+        'columns': ['datetime', 'Global_active_power', 'Global_reactive_power', 'Voltage', 'Global_intensity', 'Sub_metering_1', 'Sub_metering_2', 'Sub_metering_3'],
+        'mean_power': 'N/A',
+        'max_power': 'N/A'
     }
-    return render_template('index.html', sample_data=sample_data, stats=stats)
+    return render_template('index.html', sample_data=[], stats=stats)
 
 # Prediction page
 @app.route('/predict', methods=['GET', 'POST'])
@@ -164,6 +85,7 @@ def predict():
             predictions = {}
             for target in models.keys():
                 if models[target]['lin'] is None:
+                    logger.error("Models not initialized in predict route.")
                     return render_template('error.html', message="Models not initialized")
                 predictions[target] = {
                     'lin': float(models[target]['lin'].predict(input_df)[0]),
@@ -180,53 +102,20 @@ def predict():
             
             return render_template('predict.html', total_power=total_power, percentages=percentages, input_data=input_data, pd=pd)
         except Exception as e:
+            logger.error(f"Prediction error: {str(e)}")
             return render_template('error.html', message=f"Prediction error: {str(e)}")
     return render_template('predict.html')
 
-# Compare route
+# Compare route (simplified without data loading)
 @app.route('/compare')
 def compare():
-    data = load_data()
-    if data is None:
-        return render_template('error.html', message="Failed to load data")
-    
-    features = ['datetime', 'Global_reactive_power', 'Voltage', 'Global_intensity']
-    X = data[features]
-    metrics = {}
-    
-    try:
-        for target in models.keys():
-            if models[target]['lin'] is None:
-                return render_template('error.html', message="Models not initialized")
-                
-            y = data[target]
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
-            
-            lin_pred = models[target]['lin'].predict(X_test)
-            ridge_pred = models[target]['ridge'].predict(X_test)
-            xgb_pred = models[target]['xgb'].predict(X_test)
-            
-            metrics[target] = {
-                'models': ['Linear Regression', 'Ridge Regression', 'XGBoost'],
-                'mae': [
-                    float(mean_absolute_error(y_test, lin_pred)),
-                    float(mean_absolute_error(y_test, ridge_pred)),
-                    float(mean_absolute_error(y_test, xgb_pred))
-                ],
-                'r2': [
-                    float(r2_score(y_test, lin_pred)),
-                    float(r2_score(y_test, ridge_pred)),
-                    float(r2_score(y_test, xgb_pred))
-                ]
-            }
-        return render_template('compare.html', metrics=metrics)
-    except Exception as e:
-        return render_template('error.html', message=f"Comparison error: {str(e)}")
+    return render_template('compare.html', metrics={})
 
 # Review page
 @app.route('/reviews', methods=['GET', 'POST'])
 def reviews():
-    conn = sqlite3.connect('reviews.db')
+    db_path = '/tmp/reviews.db' if os.getenv('RENDER') else 'reviews.db'
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
     if request.method == 'POST':
@@ -254,8 +143,7 @@ def error():
 if __name__ == '__main__':
     init_db()
     if load_models():
-        # For production (e.g., Render), Flask should be run via Gunicorn
-        # Debug mode is disabled for production
         app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)), threaded=False, processes=1)
     else:
-        print("Failed to initialize application.")
+        logger.error("Failed to initialize application due to model loading failure.")
+        raise RuntimeError("Failed to initialize application.")
