@@ -30,16 +30,13 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Load data (optimized to load a smaller subset for display purposes)
+# Load data
 def load_data():
     try:
-        # Load only 1000 rows to reduce memory usage on Render
         data = pd.read_csv('household_power_consumption.txt', sep=';',
                          parse_dates={'datetime': ['Date', 'Time']},
-                         date_format='%d/%m/%Y %H:%M:%S',  # Specify the exact format
-                         dayfirst=True,  # Ensure day-first parsing for DD/MM/YYYY
-                         low_memory=False,
-                         nrows=1000)
+                         infer_datetime_format=True,
+                         low_memory=False)
         data = data.apply(pd.to_numeric, errors='coerce')
         data['datetime'] = data['datetime'].astype('int64') // 10**9
         return data.dropna()
@@ -47,10 +44,52 @@ def load_data():
         print(f"Error loading data: {e}")
         return None
 
+# Train and save models if they don't exist
+def train_and_save_models():
+    data = load_data()
+    if data is None:
+        print("Cannot train models: Data loading failed.")
+        return False
+
+    features = ['datetime', 'Global_reactive_power', 'Voltage', 'Global_intensity']
+    X = data[features]
+    
+    for target in models.keys():
+        y = data[target]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+        # Train Linear Regression
+        lin_model = LinearRegression()
+        lin_model.fit(X_train, y_train)
+        with open(f'{target}_lin.pkl', 'wb') as f:
+            pickle.dump(lin_model, f)
+
+        # Train Ridge Regression
+        ridge_model = Ridge()
+        ridge_model.fit(X_train, y_train)
+        with open(f'{target}_ridge.pkl', 'wb') as f:
+            pickle.dump(ridge_model, f)
+
+        # Train XGBoost
+        xgb_model = XGBRegressor(n_estimators=100, random_state=42)
+        xgb_model.fit(X_train, y_train)
+        with open(f'{target}_xgb.pkl', 'wb') as f:
+            pickle.dump(xgb_model, f)
+
+    return True
+
 # Load pre-trained models
 def load_models():
     global models
     try:
+        # Check if model files exist, if not, train and save them
+        for target in models.keys():
+            if not all(os.path.exists(f'{target}_{model}.pkl') for model in ['lin', 'ridge', 'xgb']):
+                print(f"Model files for {target} not found. Training new models...")
+                if not train_and_save_models():
+                    return False
+
+        # Load the models
         for target in models.keys():
             models[target]['lin'] = pickle.load(open(f'{target}_lin.pkl', 'rb'))
             models[target]['ridge'] = pickle.load(open(f'{target}_ridge.pkl', 'rb'))
@@ -60,7 +99,7 @@ def load_models():
         print(f"Error loading models: {e}")
         return False
 
-# Home page (optimized for Render)
+# Home page
 @app.route('/')
 def index():
     data = load_data()
@@ -92,6 +131,8 @@ def predict():
             
             predictions = {}
             for target in models.keys():
+                if models[target]['lin'] is None:
+                    return render_template('error.html', message="Models not initialized")
                 predictions[target] = {
                     'lin': float(models[target]['lin'].predict(input_df)[0]),
                     'ridge': float(models[target]['ridge'].predict(input_df)[0]),
@@ -110,7 +151,7 @@ def predict():
             return render_template('error.html', message=f"Prediction error: {str(e)}")
     return render_template('predict.html')
 
-# Compare route (optimized for Render)
+# Compare route
 @app.route('/compare')
 def compare():
     data = load_data()
