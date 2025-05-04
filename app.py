@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime
 import pickle
 
-# Initialize Flask app with minimal workers to reduce memory usage
+# Initialize Flask app
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
 # Global variables for models
@@ -40,10 +40,10 @@ def load_data(sample_size=10000, chunksize=100000):
         return cached_data
 
     try:
-        # Read the dataset in chunks to avoid loading the entire file into memory
+        # Read the dataset in chunks with explicit date format to suppress warning
         chunks = pd.read_csv('household_power_consumption.txt', sep=';',
                              parse_dates={'datetime': ['Date', 'Time']},
-                             infer_datetime_format=True,
+                             date_format='%d/%m/%Y %H:%M:%S',  # Specify the exact format
                              low_memory=False,
                              chunksize=chunksize)
 
@@ -78,7 +78,7 @@ def load_data(sample_size=10000, chunksize=100000):
 
 # Train and save models if they don't exist (optimized for memory)
 def train_and_save_models():
-    data = load_data(sample_size=5000)  # Use a smaller sample for training
+    data = load_data(sample_size=5000)
     if data is None:
         print("Cannot train models: Data loading failed.")
         return False
@@ -102,8 +102,8 @@ def train_and_save_models():
         with open(f'{target}_ridge.pkl', 'wb') as f:
             pickle.dump(ridge_model, f)
 
-        # Train XGBoost with further reduced complexity
-        xgb_model = XGBRegressor(n_estimators=30, max_depth=2, random_state=42)  # Further reduced complexity
+        # Train XGBoost with reduced complexity
+        xgb_model = XGBRegressor(n_estimators=30, max_depth=2, random_state=42)
         xgb_model.fit(X_train, y_train)
         with open(f'{target}_xgb.pkl', 'wb') as f:
             pickle.dump(xgb_model, f)
@@ -254,7 +254,8 @@ def error():
 if __name__ == '__main__':
     init_db()
     if load_models():
-        # Run Flask with a single worker to minimize memory usage
-        app.run(debug=True, host='0.0.0.0', port=5000, threaded=False, processes=1)
+        # For production (e.g., Render), Flask should be run via Gunicorn
+        # Debug mode is disabled for production
+        app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)), threaded=False, processes=1)
     else:
         print("Failed to initialize application.")
