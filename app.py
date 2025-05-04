@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime
 import pickle
 
-# Initialize Flask app
+# Initialize Flask app with minimal workers to reduce memory usage
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
 # Global variables for models
@@ -21,6 +21,9 @@ models = {
     'Sub_metering_3': {'lin': None, 'ridge': None, 'xgb': None}
 }
 
+# Cache for the dataset to avoid reloading
+cached_data = None
+
 # Database setup for reviews
 def init_db():
     conn = sqlite3.connect('reviews.db')
@@ -30,23 +33,35 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Load data
-def load_data():
+# Load and cache data (optimized with sampling)
+def load_data(sample_size=10000):
+    global cached_data
+    if cached_data is not None:
+        return cached_data
+
     try:
+        # Load only a subset of the data to reduce memory usage
         data = pd.read_csv('household_power_consumption.txt', sep=';',
-                         parse_dates={'datetime': ['Date', 'Time']},
-                         infer_datetime_format=True,
-                         low_memory=False)
+                           parse_dates={'datetime': ['Date', 'Time']},
+                           infer_datetime_format=True,
+                           low_memory=False)
         data = data.apply(pd.to_numeric, errors='coerce')
         data['datetime'] = data['datetime'].astype('int64') // 10**9
-        return data.dropna()
+        data = data.dropna()
+        
+        # Sample the data to reduce memory footprint
+        if len(data) > sample_size:
+            data = data.sample(n=sample_size, random_state=42)
+        
+        cached_data = data
+        return data
     except Exception as e:
         print(f"Error loading data: {e}")
         return None
 
-# Train and save models if they don't exist
+# Train and save models if they don't exist (optimized for memory)
 def train_and_save_models():
-    data = load_data()
+    data = load_data(sample_size=5000)  # Use a smaller sample for training
     if data is None:
         print("Cannot train models: Data loading failed.")
         return False
@@ -70,8 +85,8 @@ def train_and_save_models():
         with open(f'{target}_ridge.pkl', 'wb') as f:
             pickle.dump(ridge_model, f)
 
-        # Train XGBoost
-        xgb_model = XGBRegressor(n_estimators=100, random_state=42)
+        # Train XGBoost with reduced complexity
+        xgb_model = XGBRegressor(n_estimators=50, max_depth=3, random_state=42)  # Reduced n_estimators and max_depth
         xgb_model.fit(X_train, y_train)
         with open(f'{target}_xgb.pkl', 'wb') as f:
             pickle.dump(xgb_model, f)
@@ -222,6 +237,7 @@ def error():
 if __name__ == '__main__':
     init_db()
     if load_models():
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        # Run Flask with a single worker to minimize memory usage
+        app.run(debug=True, host='0.0.0.0', port=5000, threaded=False, processes=1)
     else:
         print("Failed to initialize application.")
