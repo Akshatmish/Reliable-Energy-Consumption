@@ -1,3 +1,6 @@
+Certainly! Here's the fully updated code in one block:
+
+```python
 from flask import Flask, render_template, request, jsonify
 import pandas as pd
 import numpy as np
@@ -48,7 +51,10 @@ def load_data(sample_size=10000, chunksize=100000):
         total_rows = 0
         for chunk in chunks:
             chunk = chunk.apply(pd.to_numeric, errors='coerce')
-            chunk['datetime'] = pd.to_datetime(chunk['Date'] + ' ' + chunk['Time'], dayfirst=True, format='%d/%m/%Y %H:%M:%S')
+
+            # Ensure 'Date' and 'Time' are treated as strings before concatenation
+            chunk['datetime'] = pd.to_datetime(chunk['Date'].astype(str) + ' ' + chunk['Time'].astype(str), 
+                                                dayfirst=True, format='%d/%m/%Y %H:%M:%S')
             chunk['datetime'] = chunk['datetime'].astype('int64') // 10**9  # Convert datetime to Unix timestamp
             chunk = chunk.dropna()
             total_rows += len(chunk)
@@ -225,34 +231,37 @@ def compare():
     except Exception as e:
         return render_template('error.html', message=f"Comparison error: {str(e)}")
 
-# Review page
+#Review page
 @app.route('/reviews', methods=['GET', 'POST'])
 def reviews():
-    conn = sqlite3.connect('reviews.db')
-    c = conn.cursor()
+conn = sqlite3.connect('reviews.db')
+c = conn.cursor()
 
-    if request.method == 'POST':
-        username = request.form['username']
-        review = request.form['review']
-        rating = int(request.form['rating'])
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+pgsql
+Copy
+Edit
+if request.method == 'POST':
+    username = request.form['username']
+    review = request.form['review']
+    rating = int(request.form['rating'])
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        c.execute("INSERT INTO reviews (username, review, rating, timestamp) VALUES (?, ?, ?, ?)",
-                  (username, review, rating, timestamp))
-        conn.commit()
+    c.execute("INSERT INTO reviews (username, review, rating, timestamp) VALUES (?, ?, ?, ?)",
+              (username, review, rating, timestamp))
+    conn.commit()
 
-    c.execute("SELECT * FROM reviews ORDER BY timestamp DESC")
-    reviews = c.fetchall()
-    conn.close()
+c.execute("SELECT * FROM reviews ORDER BY timestamp DESC")
+reviews = c.fetchall()
+conn.close()
 
-    return render_template('reviews.html', reviews=reviews)
-
-# Error template
+return render_template('reviews.html', reviews=reviews)
+#Error template
 @app.route('/error')
 def error():
-    message = request.args.get('message', 'An error occurred')
-    return render_template('error.html', message=message)
+message = request.args.get('message', 'An error occurred')
+return render_template('error.html', message=message)
 
-if __name__ == '__main__':
-    # Start the application
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=False, processes=1)
+if name == 'main':
+# Start the application
+app.run(debug=True, host='0.0.0.0', port=5000, threaded=False, processes=1)
+```
