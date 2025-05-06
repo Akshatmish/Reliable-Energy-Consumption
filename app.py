@@ -43,7 +43,7 @@ def load_models():
                 model_path = f'{target}_{model_type}.pkl'
                 if not os.path.exists(model_path):
                     logger.error(f"Model file {model_path} not found.")
-                    return False
+                    raise FileNotFoundError(f"Model file {model_path} not found.")
 
         # Load the models
         for target in models.keys():
@@ -54,7 +54,7 @@ def load_models():
         return True
     except Exception as e:
         logger.error(f"Error loading models: {e}")
-        return False
+        raise RuntimeError(f"Failed to load models: {str(e)}")
 
 # Home page (no dataset loading)
 @app.route('/')
@@ -154,8 +154,9 @@ def health():
 
 if __name__ == '__main__':
     init_db()
-    if load_models():
+    try:
+        load_models()
         app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)), threaded=False, processes=1)
-    else:
-        logger.error("Failed to initialize application due to model loading failure.")
-        raise RuntimeError("Failed to initialize application.")
+    except Exception as e:
+        logger.error(f"Failed to start application: {str(e)}")
+        raise RuntimeError(f"Failed to start application: {str(e)}")
