@@ -41,11 +41,14 @@ def load_data(sample_size=10000, chunksize=100000):
 
     try:
         # Read the dataset in chunks to avoid loading the entire file into memory
-        chunks = pd.read_csv('household_power_consumption.txt', sep=';',
-                             parse_dates={'datetime': ['Date', 'Time']},
-                             infer_datetime_format=True,
-                             low_memory=False,
-                             chunksize=chunksize)
+        chunks = pd.read_csv(
+    'household_power_consumption.txt',
+    sep=';',
+    parse_dates={'datetime': ['Date', 'Time']},
+    dayfirst=True,
+    low_memory=False
+)
+
 
         # Process chunks and sample
         sampled_data = []
