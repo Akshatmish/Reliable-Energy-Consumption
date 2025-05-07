@@ -168,8 +168,9 @@ def compare():
     metrics = {}
 
     for target in models.keys():
-        if any(model is None for model in models[target].values()):
-            return render_template('error.html', message=f"Model for {target} not loaded")
+    if not all(models[target][m] for m in ['lin', 'ridge', 'xgb']):
+        return render_template('error.html', message=f"Model for {target} not loaded")
+
 
         y = data[target]
         _, X_test, _, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
@@ -219,3 +220,4 @@ if __name__ == '__main__':
         app.run(debug=True, host='0.0.0.0', port=5000)
     else:
         print("Failed to initialize application.")
+
