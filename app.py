@@ -12,23 +12,32 @@ import pickle
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
-models = {
-    'Global_active_power': {'lin': None, 'ridge': None, 'xgb': None},
-    'Sub_metering_1': {'lin': None, 'ridge': None, 'xgb': None},
-    'Sub_metering_2': {'lin': None, 'ridge': None, 'xgb': None},
-    'Sub_metering_3': {'lin': None, 'ridge': None, 'xgb': None}
-}
+# Model targets and structure
+targets = [
+    'Global_active_power',
+    'Sub_metering_1',
+    'Sub_metering_2',
+    'Sub_metering_3'
+]
 
+models = {target: {'lin': None, 'ridge': None, 'xgb': None} for target in targets}
 cached_data = None
 
+# ========== Database Setup ==========
 def init_db():
     conn = sqlite3.connect('reviews.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS reviews
-                 (id INTEGER PRIMARY KEY, username TEXT, review TEXT, rating INTEGER, timestamp TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS reviews (
+                    id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    review TEXT,
+                    rating INTEGER,
+                    timestamp TEXT
+                )''')
     conn.commit()
     conn.close()
 
+# ========== Data Loading ==========
 def load_data(sample_size=10000, chunksize=50000):
     global cached_data
     if cached_data is not None:
@@ -67,10 +76,10 @@ def load_data(sample_size=10000, chunksize=50000):
         print(f"Error loading data: {e}")
         return None
 
+# ========== Model Training & Saving ==========
 def train_and_save_models():
     data = load_data(sample_size=5000)
     if data is None:
-        print("Cannot train models: Data loading failed.")
         return False
 
     features = ['datetime', 'Global_reactive_power', 'Voltage', 'Global_intensity']
@@ -80,16 +89,17 @@ def train_and_save_models():
         y = data[target]
         X_train, _, y_train, _ = train_test_split(X, y, test_size=0.3, random_state=0)
 
-        LinearRegression().fit(X_train, y_train)
-        Ridge().fit(X_train, y_train)
-        XGBRegressor(n_estimators=30, max_depth=2, random_state=42).fit(X_train, y_train)
+        lin_model = LinearRegression().fit(X_train, y_train)
+        ridge_model = Ridge().fit(X_train, y_train)
+        xgb_model = XGBRegressor(n_estimators=30, max_depth=2, random_state=42).fit(X_train, y_train)
 
-        pickle.dump(LinearRegression().fit(X_train, y_train), open(f'{target}_lin.pkl', 'wb'))
-        pickle.dump(Ridge().fit(X_train, y_train), open(f'{target}_ridge.pkl', 'wb'))
-        pickle.dump(XGBRegressor(n_estimators=30, max_depth=2, random_state=42).fit(X_train, y_train), open(f'{target}_xgb.pkl', 'wb'))
+        pickle.dump(lin_model, open(f'{target}_lin.pkl', 'wb'))
+        pickle.dump(ridge_model, open(f'{target}_ridge.pkl', 'wb'))
+        pickle.dump(xgb_model, open(f'{target}_xgb.pkl', 'wb'))
 
     return True
 
+# ========== Model Loading ==========
 def load_models():
     global models
     try:
@@ -108,6 +118,7 @@ def load_models():
         print(f"Error loading models: {e}")
         return False
 
+# ========== Routes ==========
 @app.route('/')
 def index():
     data = load_data()
@@ -137,8 +148,6 @@ def predict():
 
             predictions = {}
             for target in models.keys():
-                if any(model is None for model in models[target].values()):
-                    raise ValueError(f"Model for {target} not loaded")
                 predictions[target] = {
                     'lin': float(models[target]['lin'].predict(input_df)[0]),
                     'ridge': float(models[target]['ridge'].predict(input_df)[0]),
@@ -168,10 +177,6 @@ def compare():
     metrics = {}
 
     for target in models.keys():
-        if not all(models[target][m] for m in ['lin', 'ridge', 'xgb']):
-            return render_template('error.html', message=f"Model for {target} not loaded")
-
-
         y = data[target]
         _, X_test, _, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
 
@@ -188,6 +193,7 @@ def compare():
                 float(r2_score(y_test, models[target]['xgb'].predict(X_test)))
             ]
         }
+
     return render_template('compare.html', metrics=metrics)
 
 @app.route('/reviews', methods=['GET', 'POST'])
@@ -214,10 +220,10 @@ def error():
     message = request.args.get('message', 'An error occurred')
     return render_template('error.html', message=message)
 
+# ========== Start App ==========
 if __name__ == '__main__':
     init_db()
     if load_models():
         app.run(debug=True, host='0.0.0.0', port=5000)
     else:
         print("Failed to initialize application.")
-
