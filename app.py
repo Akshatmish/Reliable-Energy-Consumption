@@ -168,8 +168,8 @@ def compare():
     metrics = {}
 
     for target in models.keys():
-    if not all(models[target][m] for m in ['lin', 'ridge', 'xgb']):
-        return render_template('error.html', message=f"Model for {target} not loaded")
+        if not all(models[target][m] for m in ['lin', 'ridge', 'xgb']):
+            return render_template('error.html', message=f"Model for {target} not loaded")
 
 
         y = data[target]
